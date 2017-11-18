@@ -2,14 +2,14 @@
 // Title      : EthernetAXI-Streaming FIFO
 // Project    : 10G Gigabit Ethernet
 //-----------------------------------------------------------------------------
-// File       : rx_fifo_with_frame_length.v
-// Author     : Xilinx Inc.
+// File       : axi_10g_ethernet_0_axi_fifo.v
+// Author     : Xilinx Inc. &&  ByteChen
 //-----------------------------------------------------------------------------
 // Description: This is the AXI-Streaming fifo for the client loopback design
 //              example of the 10G Gigabit Ethernet core
 //
 //              The FIFO is created from Block RAMs and can be chosen to of
-//              size (in 8 bytes words) 512, 1024, 2048, 4096, 8192, or 2048.
+//              size (in 8 bytes words) 512, 1024(外面的不行了 2048, 4096, 8192, or 2048.）
 //
 //              Frame data received from the write side is written into the
 //              data field of the BRAM on the wr_axis_aclk. Start of Frame ,
@@ -27,14 +27,13 @@
 //              When there is at least one complete frame in the FIFO,
 //              the read interface will be enabled allowing data to be read
 //              from the fifo.
-//
+//				
 //				修改说明：
 //				本fifo经过修改，在输出帧时会附带上帧的长度信息。
 //				帧在进入fifo时，会计算帧的长度，并存入一个循环队列里。循环队列使用读指针和写指针进行读写。
 //				循环队列的最大长度设置成128了，也就是说此FIFO内最多缓存有128个帧。
 //				所以呢使用此FIFO时，FIFO_SIZE只能设置成512或者1024，其实也够大了。
 //				FIFO_SIZE = 1024时，最多能装 8B*1024/64B = 128个最短帧。所以循环队列的大小正是按照这个上限来设置。
-//-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 
 `timescale 1ps / 1ps
@@ -715,7 +714,7 @@ module rx_fifo_with_frame_length #(
 
    //计算帧长
    reg [10:0] frame_len = 11'd0;
-   reg [9:0] previous_wr_addr = 0;
+   reg [ADDR_WIDTH-1:0]  previous_wr_addr = 0;
    
    always @(posedge wr_axis_aclk)
 	if (sof)
@@ -735,18 +734,18 @@ module rx_fifo_with_frame_length #(
    end
    
    
-   //写入循环队列，要求FIFO内缓存的帧数不超过 队列长度
-   reg [15:0]  row0;
-   reg [15:0]  row1;
-   reg [15:0]  row2;
-   reg [15:0]  row3;
-   reg [15:0]  row4;
-   reg [15:0]  row5;
-   reg [15:0]  row6;
-   reg [15:0]  row7;
-   reg [15:0]  row8;
-   reg [15:0]  row9;
-   reg [15:0] row10;
+   //写入循环队列，要求FIFO内缓存的帧数不超过 队列长度128
+   reg [127:0]  row0;
+   reg [127:0]  row1;
+   reg [127:0]  row2;
+   reg [127:0]  row3;
+   reg [127:0]  row4;
+   reg [127:0]  row5;
+   reg [127:0]  row6;
+   reg [127:0]  row7;
+   reg [127:0]  row8;
+   reg [127:0]  row9;
+   reg [127:0] row10;
    
    reg wr_eof_reg = 1'b0;
       always @(posedge wr_axis_aclk)
@@ -765,17 +764,28 @@ module rx_fifo_with_frame_length #(
            else
                wr_eof_reg_reg    <=    wr_eof_reg;
       end
+	  
+	  
+	  reg wr_store_frame_reg_reg;
+	  always @(posedge wr_axis_aclk)
+      begin
+           if(wr_sreset == 1'b1) 
+               wr_store_frame_reg_reg    <=    1'b0;
+           else
+               wr_store_frame_reg_reg    <=    wr_store_frame_reg;
+      end
       
-   reg [3:0] write_pointer;
+   reg [6:0] write_pointer;
    
    always @(posedge wr_axis_aclk)
    begin
 		if(wr_sreset == 1'b1)
-			write_pointer <= 4'd0;
-		else if(wr_eof_reg_reg)
+			write_pointer <= 7'd0;
+		//else if(wr_eof_reg_reg)
+		else if(wr_eof_reg_reg & wr_store_frame_reg_reg)
 			begin
-				if(write_pointer == 4'd15)
-					write_pointer	<= 	4'd0;
+				if(write_pointer == 7'd127)
+					write_pointer	<= 	7'd0;
 				else
 					write_pointer	<= 	write_pointer + 1;
 			end
@@ -798,7 +808,8 @@ module rx_fifo_with_frame_length #(
 			row10	<= 	16'd0;
 		end
 		
-		else if(wr_eof_reg)
+		//else if(wr_eof_reg)
+		else if(wr_eof_reg & wr_store_frame_reg)
 		begin
 			row0[write_pointer]	    <=	frame_len[0]   ;
 			row1[write_pointer]     <=	frame_len[1]   ;
@@ -830,18 +841,18 @@ module rx_fifo_with_frame_length #(
 	*/
 	
 	//更新读pointer
-   reg [3:0] read_pointer;
+   reg [6:0] read_pointer;
    always @(posedge rd_axis_aclk)
    begin
 		if(rd_sreset == 1'b1)
-			read_pointer <= 4'd0;
+			read_pointer <= 7'd0;
 		//else if(rd_state == 3'b011 && rd_ctrl[3] == 1'b1)
 		//else if(rd_state_d1 == 3'b011 && rd_ctrl_reg == 1'b1)
 		//else if(rd_ctrl[3] == 1'b1)	//这样差不多好了，但有瑕疵
 		else if(rd_ctrl[3] == 1'b1 && rd_ctrl_reg != 1'b1)
 			begin
-				if(read_pointer == 4'd15)
-					read_pointer	<= 	4'd0;
+				if(read_pointer == 7'd127)
+					read_pointer	<= 	7'd0;
 				else
 					read_pointer	<= 	read_pointer + 1;
 			end
