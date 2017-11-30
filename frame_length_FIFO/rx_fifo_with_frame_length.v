@@ -727,9 +727,9 @@ module rx_fifo_with_frame_length #(
 	else if(wr_eof)
 		begin
 			if(wr_addr > previous_wr_addr)
-				frame_len <= (wr_addr - previous_wr_addr)*8 + wr_rem + 1 + 4;	//最后加4是FCS，或许不加比较恰当，因为交换内部无FCS
+				frame_len <= (wr_addr - previous_wr_addr)*8 + wr_rem + 1;	//最后加4是FCS，或许不加比较恰当，因为交换内部无FCS  //已删掉+4
 			else
-				frame_len <= (wr_addr + FIFO_SIZE - previous_wr_addr)*8 + wr_rem + 1 + 4;
+				frame_len <= (wr_addr + FIFO_SIZE - previous_wr_addr)*8 + wr_rem + 1;
 		end
    end
    
